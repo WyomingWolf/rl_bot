@@ -1,0 +1,54 @@
+sudo apt update
+sudo apt upgrade
+sudo apt autoremove
+
+# Change fan mode
+sudo /usr/sbin/nvpmodel -d cool
+
+# Root on nvme
+git clone https://github.com/jetsonhacks/rootOnNVMe
+cd rootOnNVMe
+./copy-rootfs-ssd.sh
+./setup-service.sh
+sudo reboot
+
+# Setup VNC
+cd /usr/lib/systemd/user/graphical-session.target.wants
+sudo ln -s ../vino-server.service ./.
+gsettings set org.gnome.Vino prompt-enabled false
+gsettings set org.gnome.Vino require-encryption false
+gsettings set org.gnome.Vino authentication-methods "['vnc']"
+gsettings set org.gnome.Vino vnc-password $(echo -n 'nvidia'|base64)
+sudo reboot
+
+# Install Tensorflow
+sudo apt install libtbb2 libtbb-dev
+sudo apt-get install cuda-toolkit-10.2
+sudo apt-get install libhdf5-serial-dev hdf5-tools libhdf5-dev zlib1g-dev zip libjpeg8-dev liblapack-dev libblas-dev gfortran
+sudo -H pip3 install -U pip testresources setuptools==49.6.0 
+sudo -H pip3 install -U numpy==1.19.4 future==0.18.2 mock==3.0.5 h5py==2.10.0 keras_preprocessing==1.1.1 keras_applications==1.0.8 gast==0.2.2 futures protobuf pybind11
+sudo -H pip3 install --pre --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v45 tensorflow
+
+# Install ZED SDK
+sudo -H pip3 install pyopengl
+wget -O ZED_SDK https://download.stereolabs.com/zedsdk/3.5/jp45/jetsons
+chmod +x ZED_SDK
+./ZED_SDK
+# intall cuda = n, install static = n
+rm ZED_SDK
+
+# Install Dynamixel SDk
+git clone https://github.com/ROBOTIS-GIT/DynamixelSDK.git
+cd DynamixelSDK/python/
+sudo python3 setup.py install
+sudo usermod -a -G dialout $USER
+
+# Install Pressure Sensor libraries
+sudo -H pip3 install adafruit-blinka
+sudo -H pip3 install adafruit-circuitpython-ads1x15
+
+# Enable GPIO
+sudo /opt/nvidia/jetson-io/jetson-io.py
+# Select "Configure 40-pin expansion header" at the bottom.
+# Select "spi1 (19, 21, 23, 24, 26)" and then select "Back".
+# Select Save and reboot to reconfigure pins. 
