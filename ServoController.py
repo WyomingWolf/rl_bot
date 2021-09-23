@@ -110,6 +110,7 @@ class ServoController:
             quit()
 
         self.reboot(np.ones(self.num_servos)) # reboot all servos
+        time.sleep(0.25)
 
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]
@@ -184,6 +185,8 @@ class ServoController:
             elif dxl_error != 0:
                 print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
+            time.sleep(0.1)
+
             # Enable Torque
             dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, TORQUE_ENABLE)
             if dxl_comm_result != COMM_SUCCESS:
@@ -197,8 +200,6 @@ class ServoController:
                 print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
             elif dxl_error != 0:
                 print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            
-
 
             # Add parameter storage for multiple values
             dxl_addparam_result = self.groupSyncRead.addParam(DXL_ID)
@@ -286,12 +287,18 @@ class ServoController:
        
     def writeAction(self, action):
         #print(len(action))
+        #print(action)
         if len(action) != self.num_servos:
             print("Mismatched action size")
             quit()
         else:
+            action[action > 1] = 1
+            action[action < -1] = -1
+            action = (action + 1) / 2
+     
             # convert actions to encoder positions
             goal_position = (action*(self.servos[:,3] - self.servos[:,2]) + self.servos[:,2]).astype(int)
+            #print(goal_position)
           
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]

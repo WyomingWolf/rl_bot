@@ -38,18 +38,18 @@ for i in range(n_episodes):
      state = bot.reset()
      time.sleep(1.0)
      start = time.monotonic()
-
+     step = 1
      for j in range(n_steps):
 
          action = np.random.rand(act_space)
          next_state, reward, done = bot.step(action)
          total_reward += reward
-    
+         step += 1
          if done:
              break
     
      stop = time.monotonic()
-     freq = n_steps/(stop-start)
+     freq = step/(stop-start)
      reward_arr[i] = total_reward
      print("Total Reward: {:.3f}".format(total_reward), "\tForward Pass Per Second: {:.3f}".format(freq))
 
