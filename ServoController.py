@@ -93,7 +93,7 @@ class ServoController:
         self.groupSyncWrite = GroupSyncWrite(self.portHandler, self.packetHandler, ADDR_GOAL_POSITION, LEN_GOAL_POSITION)
 
         # Initialize GroupSyncRead instace for Present Position
-        self.groupSyncRead = GroupSyncRead(self.portHandler, self.packetHandler, ADDR_INDIRECTDATA_FOR_READ, LEN_INDIRECTDATA_FOR_READ, fast=True)
+        self.groupSyncRead = GroupSyncRead(self.portHandler, self.packetHandler, ADDR_INDIRECTDATA_FOR_READ, LEN_INDIRECTDATA_FOR_READ, fast=False)
 
         # Open port
         if self.portHandler.openPort():

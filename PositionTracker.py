@@ -28,9 +28,9 @@ import pyzed.sl as sl
 import numpy as np
 
  
-def GetZEDPosition(botActive, posEst, memLock, active):
-    init_params = sl.InitParameters(camera_resolution=sl.RESOLUTION.VGA,
-                                    coordinate_units=sl.UNIT.METER,
+def GetZEDPosition(botActive, posEst, memLock, active, reset):
+    init_params = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720,
+                                    coordinate_units=sl.UNIT.CENTIMETER,
                                     coordinate_system=sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP)
                                  
     # If applicable, use the SVO given as parameter
@@ -55,12 +55,13 @@ def GetZEDPosition(botActive, posEst, memLock, active):
     camera_info = zed.get_camera_information()
 
     py_translation = sl.Translation()
-    pose_data = sl.Transform()
-
+    #pose_data = sl.Transform()
+    #print(camera_info)
     print("ZED Camera: Online")
     active.set()
 
-    while(botActive.is_set()):   
+    while(botActive.is_set()): 
+        
         if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
             tracking_state = zed.get_position(camera_pose)
             if tracking_state == sl.POSITIONAL_TRACKING_STATE.OK:
@@ -70,6 +71,10 @@ def GetZEDPosition(botActive, posEst, memLock, active):
                 memLock.acquire()
                 posEst[:] = np.append(translation.get(), rotation)
                 memLock.release()
+        if reset.is_set():
+            camera_pose = sl.Pose() #reset pose
+            #print("Pose reset")
+            reset.clear()
 
     zed.close()
 

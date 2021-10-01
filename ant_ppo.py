@@ -3,15 +3,25 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from bots import ant
 
+steps = 64
+episodes = 10
+
 # Create environment
 env = ant()
 
 # Instantiate the agent
-model = PPO('MlpPolicy', env, verbose=2)
+model = PPO('MlpPolicy', env, n_steps=steps, verbose=1)
 # Train the agent
-model.learn(total_timesteps=int(1000))
+'''
+for i in range (episodes):
+    print("Episode: ", i+1)
+    model.learn(total_timesteps=int(steps))  
+    #env.reset()
+'''
+model.learn(total_timesteps=int(steps*episodes))
 # Save the agent
-model.save("ppo_ant")
+model.save("ant_walk")
 
+env.reset()
 env.stop()
 print("Training complete")
