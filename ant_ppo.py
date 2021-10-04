@@ -1,13 +1,13 @@
 import gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
-from bots import ant
+from envs.walkers.ant import AntEnv
 
 steps = 64
 episodes = 10
 
 # Create environment
-env = ant()
+env = AntEnv()
 
 # Instantiate the agent
 model = PPO('MlpPolicy', env, n_steps=steps, verbose=1)
