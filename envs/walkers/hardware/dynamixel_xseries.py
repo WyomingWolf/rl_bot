@@ -36,7 +36,7 @@ else:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         return ch
 
-from dynamixel_sdk import *                    # Uses Dynamixel SDK library
+from envs.walkers.hardware.dynamixel_sdk import *                    # Uses Dynamixel SDK library
 
 # Use the actual port assigned to the U2D2.
 # ex) Windows: "COM*", Linux: "/dev/ttyUSB*", Mac: "/dev/tty.usbserial-*"
@@ -58,9 +58,11 @@ LEN_PRESENT_LOAD		= 2	    # Data Byte Length
 ADDR_PRESENT_VELOCITY		= 128
 LEN_PRESENT_VELOCITY		= 4	    # Data Byte Length         
 ADDR_PRESENT_POSITION           = 132
-LEN_PRESENT_POSITION            = 4         # Data Byte Lengt
+LEN_PRESENT_POSITION            = 4         # Data Byte Length
+ADDR_PRESENT_TEMP               = 146
+LEN_PRESENT_TEMP                = 1         # Data Byte Length
 ADDR_INDIRECTADDRESS_FOR_READ   = 168
-LEN_INDIRECTDATA_FOR_READ       = 11        # Sum of Data of Length. i.e) Hardware Error (1byte) + Present Load (2 byte) + Present Velocity (4 byte) + Present Position (4 bytes)
+LEN_INDIRECTDATA_FOR_READ       = 12        # Sum of Data of Length. i.e) Hardware Error (1byte) + Present Load (2 byte) + Present Velocity (4 byte) + Present Position (4 bytes) + Present Temperature (1 byte) 
 ADDR_INDIRECTDATA_FOR_READ      = 224
 
 TORQUE_DISABLE                  = 0         # Value for disabling the torque
@@ -108,106 +110,109 @@ class ServoController:
         else:
             print("Failed to change the baudrate")
             quit()
-
-        self.reboot(np.ones(self.num_servos)) # reboot all servos
-        time.sleep(0.25)
-
+        
+        # reboot all servos
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]
-            # Disable Torque
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, TORQUE_DISABLE)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+            result =  self.reboot(DXL_ID) 
+            while result != 0:
+                result =  self.reboot(DXL_ID)
+       
 
-            # Turn off LED
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_LED_RED, LED_OFF)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+    def setTorque(self, DXL_ID, status):
+        # Disable Torque
+        dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, status)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
-            # INDIRECTDATA parameter storages replace present load, present velocity and present position
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 0, ADDR_HARDWARE_ERROR)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 2, ADDR_PRESENT_LOAD + 0)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 4, ADDR_PRESENT_LOAD + 1)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 6, ADDR_PRESENT_VELOCITY + 0)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 8, ADDR_PRESENT_VELOCITY + 1)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 10, ADDR_PRESENT_VELOCITY + 2)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 12, ADDR_PRESENT_VELOCITY + 3)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 14, ADDR_PRESENT_POSITION + 0)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 16, ADDR_PRESENT_POSITION + 1)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 18, ADDR_PRESENT_POSITION + 2)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 20, ADDR_PRESENT_POSITION + 3)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+    def setLED(self, DXL_ID, status):
+        # Turn off LED
+        dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_LED_RED, status)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
-            time.sleep(0.1)
+    def setupServo(self, DXL_ID):
+        self.setLED(DXL_ID, LED_OFF)
+        self.setTorque(DXL_ID, TORQUE_DISABLE)  
+        time.sleep(0.1)
+        
+    
+        # INDIRECTDATA parameter storages replace hardware error status, present load, present velocity, present position and present temperature
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ, ADDR_HARDWARE_ERROR)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 2, ADDR_PRESENT_LOAD)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 4, ADDR_PRESENT_LOAD + 1)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 6, ADDR_PRESENT_VELOCITY)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 8, ADDR_PRESENT_VELOCITY + 1)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 10, ADDR_PRESENT_VELOCITY + 2)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 12, ADDR_PRESENT_VELOCITY + 3)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 14, ADDR_PRESENT_POSITION)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 16, ADDR_PRESENT_POSITION + 1)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 18, ADDR_PRESENT_POSITION + 2)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 20, ADDR_PRESENT_POSITION + 3)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ + 22, ADDR_PRESENT_TEMP)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
-            # Enable Torque
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, TORQUE_ENABLE)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-   
-            # Turn on LED
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_LED_RED, LED_ON)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        time.sleep(0.1)
 
-            # Add parameter storage for multiple values
-            dxl_addparam_result = self.groupSyncRead.addParam(DXL_ID)
-            if dxl_addparam_result != True:
-                print("[ID:%03d] groupSyncRead addparam failed" % DXL_ID)
-                quit()
-            else:
-                print("Dynamixel#%d: Online" % DXL_ID)
+        self.setLED(DXL_ID, LED_ON)
+        self.setTorque(DXL_ID, TORQUE_ENABLE)     
+        time.sleep(0.1)
+
+        # Add parameter storage for multiple values
+        dxl_addparam_result = self.groupSyncRead.addParam(DXL_ID)
+        if dxl_addparam_result == True:   
+            print("Dynamixel#%d: Online" % DXL_ID)
 
 
     def readState(self):
@@ -215,6 +220,7 @@ class ServoController:
         dxl_error = np.zeros((self.num_servos,1), dtype=np.int8)
         dxl_load = np.zeros((self.num_servos,1), dtype=np.int16)	
         dxl_state = np.zeros((self.num_servos,2), dtype=np.int32)
+        dxl_temp = np.zeros((self.num_servos,1), dtype=np.int8)
         # Syncread present position from indirectdata
         dxl_comm_result = self.groupSyncRead.txRxPacket()
         if dxl_comm_result != COMM_SUCCESS:
@@ -222,7 +228,8 @@ class ServoController:
 
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]
-                       
+            
+            '''           
             # Check if groupsyncread data of Dynamixel error status is available
             dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
             if dxl_getdata_result != True:
@@ -247,25 +254,38 @@ class ServoController:
                 print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
                 quit()
 
-            # Get Dynamixel present error status
-            dxl_error[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
+            # Check if groupsyncread data of Dynamixel present temperature is available
+            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
+            if dxl_getdata_result != True:
+                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                quit()
+            '''
 
-            # Get Dynamixel present load value
-            dxl_load[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
+            try:
+                # Get Dynamixel present error status
+                dxl_error[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
 
-            # Get Dynamixel present position value
-            dxl_state[i,0] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
+                # Get Dynamixel present load value
+                dxl_load[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
 
-            # Get Dynamixel present position value
-            dxl_state[i,1] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
+                # Get Dynamixel present position value
+                dxl_state[i,0] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
 
-        return np.concatenate((dxl_load, dxl_state), axis=1)/[LOAD_PRECISION, VEL_PRECISION, POS_PRECISION], dxl_error
+                # Get Dynamixel present position value
+                dxl_state[i,1] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
+
+                # Get Dynamixel present error status
+                dxl_temp[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
+            except Exception as e:
+                print(e)
+                print(DXL_ID)
+
+        return np.concatenate((dxl_load, dxl_state), axis=1)/[LOAD_PRECISION, VEL_PRECISION, POS_PRECISION], dxl_error, dxl_temp
 
 
     def moveToStart(self):
         goal_position = self.servos[:,1]
              
-
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]
             # Allocate goal position value into byte array
@@ -319,16 +339,23 @@ class ServoController:
         # Clear syncwrite parameter storage
         self.groupSyncWrite.clearParam()
 
-    def reboot(self, errors):
-         for i in range(self.num_servos):
-            if errors[i] == 1:
-                DXL_ID = self.servos[i,0]
-                dxl_comm_result, dxl_error = self.packetHandler.reboot(self.portHandler, DXL_ID)
-                if dxl_comm_result != COMM_SUCCESS:
-                    print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-                elif dxl_error != 0:
-                    print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
+    def reboot(self, DXL_ID):
+        status = 0
+        dxl_comm_result, dxl_error = self.packetHandler.reboot(self.portHandler, DXL_ID)
+        if dxl_comm_result != COMM_SUCCESS:
+            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+            status = 1
+        elif dxl_error != 0:
+            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+            status = 1
+        else:
+            time.sleep(0.25)
+            self.setupServo(DXL_ID)
+            #time.sleep(0.25)
+
+        return status
+        
 
     def close(self):
         # Clear syncread parameter storage
@@ -336,19 +363,8 @@ class ServoController:
 
         for i in range(self.num_servos):
             DXL_ID = self.servos[i,0]
-            # Disable Dynamixel Torque
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, TORQUE_DISABLE)
-            if dxl_comm_result != COMM_SUCCESS:
-                 print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                 print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-
-            # Turn off LED
-            dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_LED_RED, LED_OFF)
-            if dxl_comm_result != COMM_SUCCESS:
-                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            elif dxl_error != 0:
-                print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+            self.setTorque(DXL_ID, TORQUE_DISABLE)  
+            self.setLED(DXL_ID, LED_OFF)
 
         # Close port
         self.portHandler.closePort()

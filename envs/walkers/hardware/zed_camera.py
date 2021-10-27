@@ -1,4 +1,4 @@
-########################################################################
+ ########################################################################
 #
 # Copyright (c) 2021, STEREOLABS.
 #
@@ -27,53 +27,91 @@ import sys
 import pyzed.sl as sl
 import numpy as np
 
- 
-def GetZEDPosition(botActive, posEst, memLock, active, reset):
-    init_params = sl.InitParameters(camera_resolution=sl.RESOLUTION.HD720,
-                                    coordinate_units=sl.UNIT.CENTIMETER,
-                                    coordinate_system=sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP)
-                                 
-    # If applicable, use the SVO given as parameter
-    # Otherwise use ZED live stream
-    if len(sys.argv) == 2:
-        filepath = sys.argv[1]
-        print("Using SVO file: {0}".format(filepath))
-        init_params.set_from_svo_file(filepath)
+def transform_pose(pose, Taw) :
+    pose = Taw * pose 
+    return pose
 
+def initializeCamera(params):
     zed = sl.Camera()
-    status = zed.open(init_params)
+    status = zed.open(params)
     if status != sl.ERROR_CODE.SUCCESS:
         print(repr(status))
         exit()
 
     tracking_params = sl.PositionalTrackingParameters()
     zed.enable_positional_tracking(tracking_params)
+    return zed
+
+
+def GetZEDPosition(botActive, posEst, memLock, active, reset):
+    init_params = sl.InitParameters(camera_resolution=sl.RESOLUTION.VGA,
+                                    camera_fps=100,
+                                    coordinate_units=sl.UNIT.METER)
+
+    zed = initializeCamera(init_params)
 
     runtime = sl.RuntimeParameters()
     camera_pose = sl.Pose()
 
-    camera_info = zed.get_camera_information()
+    #camera_info = zed.get_camera_information()
 
-    py_translation = sl.Translation()
-    #pose_data = sl.Transform()
+    transform_data = sl.Transform()
+    transform_data.set_identity()
+
     #print(camera_info)
+    lost_count = 0
     print("ZED Camera: Online")
-    active.set()
 
     while(botActive.is_set()): 
         
         if zed.grab(runtime) == sl.ERROR_CODE.SUCCESS:
             tracking_state = zed.get_position(camera_pose)
             if tracking_state == sl.POSITIONAL_TRACKING_STATE.OK:
-                rotation = camera_pose.get_rotation_vector()
-                translation = camera_pose.get_translation(py_translation)
+                active.set()
+                new_pose = sl.Transform()
+                new_pose.init_matrix(transform_pose(camera_pose.pose_data(sl.Transform()), transform_data))
+                rotation = new_pose.get_rotation_vector()
+                translation = new_pose.get_translation()
+                lost_count = 0
                 # populate shared array
                 memLock.acquire()
                 posEst[:] = np.append(translation.get(), rotation)
                 memLock.release()
+            else:
+                
+                lost_count += 1
+                if lost_count == 100:
+                    print("Error: Position lost. Restarting camera.")
+                    if active.is_set():
+                        active.clear()
+                    else:
+                        print("Error: Unknown issue with camera.")
+                        zed.close()
+                        exit()
+                    '''
+                    try:
+                        zed.close()
+                    except Exception as e:
+                        print(e)
+                        exit()
+                    '''
+                    if zed.is_opened():
+                        print("Attempting to close camera...")
+                        zed.close()
+                        print("Camera closed.")
+
+                    lost_count = 0
+                    zed = initializeCamera(init_params)
+                    transform_data.set_identity()
+        else:
+            status = zed.grab(runtime)
+            print(repr(status))
+            exit()
+        
         if reset.is_set():
-            camera_pose = sl.Pose() #reset pose
-            #print("Pose reset")
+            transform_data = camera_pose.pose_data(sl.Transform())
+            transform_data.inverse()
+
             reset.clear()
 
     zed.close()
