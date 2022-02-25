@@ -1,15 +1,6 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-# ***********************     SyncRead and SyncWrite Example      ***********************
-#  Required Environment to run this example :
-#    - 
-#    - 
-#  How to use the example :
-#    -  
-#    - 
-#    - 
-#    - 
+# *******************************************************************************
+#  train.py 
+#
 #  Author: James Mock
 #  Email: james.w.mock@protonmail.com
 #  Date: 08/21/2021

@@ -1,3 +1,12 @@
+# *******************************************************************************
+#  utils.py 
+#
+#  Author: James Mock
+#  Email: james.w.mock@protonmail.com
+#  Date: 08/21/2021
+# *******************************************************************************
+
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt

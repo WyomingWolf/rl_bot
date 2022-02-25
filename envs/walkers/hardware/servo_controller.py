@@ -1,3 +1,12 @@
+# *******************************************************************************
+#  servo_controller.py 
+#
+#  Author: James Mock
+#  Email: james.w.mock@protonmail.com
+#  Date: 01/21/2022
+# *******************************************************************************
+
+
 import time
 import numpy as np
 from envs.walkers.hardware.dynamixel_xseries import XSeries

@@ -1,18 +1,9 @@
-################################################################################
-# Author: James Mock
-# Date: 2021-08-12
+# *******************************************************************************
+#  dynamixel_xseries.py 
 #
-# ******************* Dynamixel X-Series Servo Controller **********************
-#  Required Environment to run this example :
-#    - Protocol 2.0 supported DYNAMIXEL(X, P, PRO/PRO(A), MX 2.0 series)
-#    - DYNAMIXEL Starter Set (U2D2, U2D2 PHB, 12V SMPS)
-#  How to use the example :
-#    - Select the DYNAMIXEL in use at the MY_DXL in the example code. 
-#    - Build and Run from proper architecture subdirectory.
-#    - For ARM based SBCs such as Raspberry Pi, use linux_sbc subdirectory to build and run.
-#    - https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_sdk/overview/
-#  Author: Ryu Woon Jung (Leon)
-#  Maintainer : Zerom, Will Son
+#  Author: James Mock
+#  Email: james.w.mock@protonmail.com
+#  Date: 12/08/2021
 # *******************************************************************************
 
 import os
