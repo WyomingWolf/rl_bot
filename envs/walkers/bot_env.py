@@ -20,39 +20,67 @@ import numpy as np
 import multiprocessing as mp
 import gym
 from gym import spaces
-from envs.walkers.hardware.dynamixel_xseries import ServoController as sc
+from envs.walkers.hardware.servo_controller import ServoController
 from envs.walkers.hardware.ads1115 import GetContactData
 from envs.walkers.hardware.zed_camera import GetZEDPosition
-from pynput import keyboard
 
-TIMEOUT = 10.0
+TIMEOUT = 20.0
 
 class BotEnv(gym.Env):
     def __init__(self, servos, num_sensors=0, num_cameras=1):
-        self.dt = 0.1 # 100ms
-        #self.spec.max_episode_steps = 256
-        self.act_size = np.shape(servos)[0]
+        self.dt = 0.05 # 50ms
+        self.num_servos = np.shape(servos)[0]
         self.servo_ids = servos[:,0]
         self.num_sensors = num_sensors
         self.num_cameras = num_cameras 
-        self.obs_size = self.act_size*3 + self.num_sensors
-        self.lastPosition = np.zeros(6)
-        self.lastAction = np.zeros(self.act_size)
+        self.obs_size = 10 + self.num_servos*3 + self.num_sensors
+        self.lastPosition = np.zeros(7)
+        self.lastAction = np.zeros(self.num_servos)
         
-        act = np.ones((self.act_size, 2)) * [-1, 1]
-        self.action_space = spaces.Box(low=act[:,0], high=act[:,1], dtype=np.float16) 
-        obs = np.ones((self.obs_size, 2)) * [-1, 1] 
-        self.observation_space = spaces.Box(low=obs[:,0], high=obs[:,1], dtype=np.float16)
-        #self.spec.max_episode_steps = 128
+        act = np.ones((self.num_servos, 2)) * [-1, 1]
+        self.action_space = spaces.Box(low=act[:,0], high=act[:,1], dtype=np.float32) 
+        obs = np.ones((self.obs_size, 2)) * [-float("inf"), float("inf")] 
+        self.observation_space = spaces.Box(low=obs[:,0], high=obs[:,1], dtype=np.float32)
 
         self.botActive = mp.Event()
         self.botActive.set()
-
-        self.botPause = False
                    
         # initialize servos
-        print("\nInitializing servos")
-        self.servos = sc(servos)
+        self.servoLock = mp.Lock()
+        self.servoData = mp.Array('d', self.num_servos*3)
+        self.action = mp.Array('d', self.num_servos)
+        self.newAction = mp.Event()
+        self.error = mp.Event()
+        self.overheat = mp.Event()
+        self.servoActive = mp.Event()
+        self.servoReset = mp.Event()
+        try:
+            print("\nInitializing servos...")
+            self.servos = mp.Process(target=ServoController,
+                                     args=(self.botActive,
+                                           servos,
+                                           self.servoData,
+                                           self.newAction,
+                                           self.action,
+                                           self.servoLock,
+                                           self.error,
+                                           self.overheat,
+                                           self.servoActive,
+                                           self.servoReset))
+            self.servos.start()
+
+            sleep_time = 0
+            while not self.servoActive.is_set():
+                if sleep_time >= TIMEOUT*2:
+                    print("Failed to initalize servos.")
+                    self.close()
+                else: 
+                    time.sleep(0.1)
+                    sleep_time += 0.1
+        except Exception as e:
+            print(e)
+            print("Failed to initalize servos.")
+            self.close()
 
         # initialize foot sensors
         self.adcLock = mp.Lock()
@@ -60,7 +88,7 @@ class BotEnv(gym.Env):
         self.adcActive = mp.Event()
         if self.num_sensors > 0 and self.num_sensors <= 4:
             try:
-                print("\nInitializing contact sensors")
+                print("\nInitializing contact sensors...")
                 self.contact = mp.Process(target=GetContactData, 
                                           args=(self.botActive,
                                                 self.adcData,
@@ -69,23 +97,24 @@ class BotEnv(gym.Env):
                 self.contact.start()
                 sleep_time = 0
                 while not self.adcActive.is_set():
-                    if sleep_time == TIMEOUT:
-                        print("Failed to initalize contact sensors")
-                        self.stop()
+                    if sleep_time >= TIMEOUT:
+                        print("Failed to initalize contact sensors.")
+                        self.close()
                     else: 
-                        time.sleep(.01)
-                        sleep_time += .01
+                        time.sleep(0.1)
+                        sleep_time += 0.1
             except Exception as e:
                 print(e)
-                print("Failed to initalize contact sensors")
-                self.stop()
+                print("Failed to initalize contact sensors.")
+                self.close()
 
-        print("\nInitializing stereo camera")
+        print("\nInitializing stereo camera...")
         # start ZED camera process
                
         self.camLock = mp.Lock()
-        self.posEst = mp.Array('d', 6)
+        self.posEst = mp.Array('d', 13)
         self.camActive = mp.Event()
+        self.failedStart = mp.Event()
         self.resetPos = mp.Event()
         try:
             self.tracker = mp.Process(target=GetZEDPosition, 
@@ -93,38 +122,38 @@ class BotEnv(gym.Env):
                                             self.posEst,
                                             self.camLock,
                                             self.camActive,
+                                            self.failedStart,
                                             self.resetPos))
             self.tracker.start()
             sleep_time = 0
             while not self.camActive.is_set():
-                if sleep_time == TIMEOUT:
-                    print("Failed to initalize stereo camera")
-                    self.stop()
+                if sleep_time >= TIMEOUT:
+                    print("Failed to initalize stereo camera.")
+                    self.close()
                 else: 
-                    time.sleep(.01)
-                    sleep_time += .01
+                    time.sleep(0.1)
+                    sleep_time += 0.1
         except Exception as e:
             print(e)
-            print("Failed to initalize stereo camera")
-            self.stop()
+            print("Failed to initalize stereo camera.")
+            self.close()
 
-        # Collect events until released
-        listener = keyboard.Listener(on_press=self.on_press)
-        listener.start()
-        #with keyboard.Listener(on_press=self.on_press) as listener: listener.join()
-
-        print("\nAll systems nonimal\n") 
-
-
-    def on_press(self, key):
-        if key == keyboard.Key.space:
-            self.botPause = True     
+        print("\nAll systems nonimal\n")    
 
     def observeState(self):
+        # get camera position
+        #obsStart2 = time.monotonic()
+        self.camLock.acquire()
+        cameraState = self.posEst[:]
+        self.camLock.release()
+        #obsStop2 = time.monotonic()
+        #obsTime2 = obsStop2-obsStart2
+
         # get servo data
         #obsStart0 = time.monotonic()
-        obs, err, temp = self.servos.readState()
-        servoState = np.ndarray.flatten(obs)
+        self.servoLock.acquire()
+        servoState = self.servoData[:]
+        self.servoLock.release()
         #obsStop0 = time.monotonic()
         #obsTime0 = obsStop0-obsStart0
         
@@ -136,87 +165,91 @@ class BotEnv(gym.Env):
         #obsStop1 = time.monotonic()
         #obsTime1 = obsStop1-obsStart1
 
-        # get camera position
-        #obsStart2 = time.monotonic()
-        self.camLock.acquire()
-        position = self.posEst[:]
-        self.camLock.release()
-        #obsStop2 = time.monotonic()
-        #obsTime2 = obsStop2-obsStart2
-
         #print("Servo Time: ", obsTime0) #, "\tSensor Time: ", obsTime1, "\tCamera Time: ", obsTime2)
-        return np.concatenate((servoState, contact, position), -1), err, temp 
+        return np.concatenate((cameraState, servoState, contact))
 
     def reset(self):
-         print("Reset called")
-         obs, err, temp = self.observeState()
-         if np.sum(err) > 0:
-             print("Error: Hardware error detected, rebooting servos.")
-             self.rebootServos(err)
-             time.sleep(0.25)
-         self.servos.moveToStart()
-         time.sleep(0.5)
+        #print("\nReset called\n")
 
-         if np.sum(err) > 0:
-             print("Error: Check servos")
-             self.stop()
-         timer = 0
-         while not self.camActive.is_set():
-             print("Waiting for camera")
-             time.sleep(1.0)
-             if timer == 15:
-                 try:
-                     print("Error: Unable to close camera, relaunching process.")
-                     self.tracker.join()
-                     self.tracker.terminate()
-                      
-                     self.tracker = mp.Process(target=GetZEDPosition, 
-                                               args=(self.botActive,
-                                                     self.posEst,
-                                                     self.camLock,
-                                                     self.camActive,
-                                                     self.resetPos))
-                     self.tracker.start()
-                     sleep_time = 0
-                     while not self.camActive.is_set():
-                         if sleep_time == TIMEOUT:
-                             print("Failed to initalize stereo camera")
-                             self.stop()
-                         else: 
-                             time.sleep(.01)
-                             sleep_time += .01
-                 except Exception as e:
-                     print(e)
-                     self.stop()
-                        
-         if self.botPause:
-             self.botPause = False
-             print("Robot paused. Press 'Enter' to continue.")
-             x = input()
- 
-         self.resetPos.set()
-         time.sleep(0.5)
-         obs, err, temp = self.observeState()
+        while self.overheat.is_set():
+                time.sleep(1.0)
 
-         #print(obs[:self.obs_size])
-         return obs[:self.obs_size]
+        timer = 0
+        if self.error.is_set() or not self.servoActive.is_set():
+            print("Waiting for servos...")
+            while self.error.is_set():            
+                time.sleep(0.1)
+                timer += 0.1
+                if timer >= TIMEOUT:
+                    print("Failed to reboot servos.")
+                    self.close()
 
-    def enableServos(self):
-        for i in range(self.act_size):
-            servo = self.servo_ids[i]
-            self.servos.setTorque(servo, 1)
+        self.servoReset.set()
+        time.sleep(0.5)
+        
+        timer = 0
+        if not self.camActive.is_set():
+            print("Waiting for camera...")
+            while not self.camActive.is_set(): 
+                time.sleep(0.1)
+                timer += 0.1
+                if timer >= TIMEOUT:
+                    print("Failed to reboot camera. Relaunching process...")
+                    self.tracker.terminate()
+                    time.sleep(0.5)
+                    try:
+                        self.tracker = mp.Process(target=GetZEDPosition, 
+                                                  args=(self.botActive,
+                                                        self.posEst,
+                                                        self.camLock,
+                                                        self.camActive,
+                                                        self.failedStart,
+                                                        self.resetPos))
+                        self.tracker.start()
+                        sleep_time = 0
+                        while not self.camActive.is_set():
+                            if self.failedStart.is_set():
+                                self.failedStart.clear()
+                                print("Failed to initalize stereo camera. Relaunching process...")
+                                self.tracker.terminate()
+                                time.sleep(0.5)
+                                try:
+                                    self.tracker = mp.Process(target=GetZEDPosition, 
+                                                              args=(self.botActive,
+                                                                    self.posEst,
+                                                                    self.camLock,
+                                                                    self.camActive,
+                                                                    self.failedStart,
+                                                                    self.resetPos))
+                                    self.tracker.start()
+                                    while not self.camActive.is_set():
+                                        if self.failedStart.is_set():
+                                            print("Failed to initalize stereo camera.")
+                                            self.close()
+                                        else: 
+                                            time.sleep(0.1)
+                                            sleep_time += 0.1
+                                except Exception as e:
+                                    print(e)
+                            else: 
+                                time.sleep(0.1)
+                                sleep_time += 0.1
+                    except Exception as e:
+                        print(e)
+                        print("Failed to initalize stereo camera.")
+                        self.close()
+                    
+        print("Robot paused. Press 'Enter' to continue.")
+        x = input()
 
-    def disableServos(self):
-        for i in range(self.act_size):
-            servo = self.servo_ids[i]
-            self.servos.setTorque(servo, 0)
+        self.resetPos.set()
+        time.sleep(0.5)
+        obs = self.observeState()
 
-    def rebootServos(self, err):
-        for i in range(len(err)):
-           if err[i] != 0:
-              self.servos.reboot(self.servos.servos[i,0])
+        #print(obs[:self.obs_size])
+        return obs[:self.obs_size]
 
-    def stop(self):
+    def close(self):
         self.botActive.clear()
         try:
             self.contact.join()
@@ -228,7 +261,13 @@ class BotEnv(gym.Env):
             self.tracker.terminate()
         except Exception as e:
             print(e)
-        self.servos.close()
+        try:
+            self.servos.join()
+            self.servos.terminate()
+        except Exception as e:
+            print(e)
+        quit()
+
 
 
 

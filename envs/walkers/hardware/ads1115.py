@@ -6,7 +6,7 @@ import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 
 MAX_VOLTAGE = 3.3
-PRECISION = 32767
+PRECISION = 2**16
 
 def GetContactData(botActive, data, memLock, active):
 
@@ -28,10 +28,14 @@ def GetContactData(botActive, data, memLock, active):
     active.set()
                  
     while(botActive.is_set()):
+        #print(A0.value, A1.value, A2.value, A3.value)
         memLock.acquire()
-        data[:] = np.array([A0.value, A1.value, A2.value, A3.value])/PRECISION
+        try:
+            data[:] = np.array([A0.value, A1.value, A2.value, A3.value])/PRECISION
+        except Exception as e:
+            print(e)
         memLock.release()
-        #time.sleep(.001)
+        time.sleep(.01)
 
 
 

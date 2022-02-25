@@ -18,7 +18,7 @@
 ################################################################################
 
 # Author: Ryu Woon Jung (Leon)
-import numpy as np
+
 from .robotis_def import *
 
 TXPACKET_MAX_LEN = 1 * 1024
@@ -193,7 +193,8 @@ class Protocol2PacketHandler(object):
 
         index = PKT_INSTRUCTION
         for i in range(0, (packet_length_in - 2)):  # except CRC
-            if (packet[i + PKT_INSTRUCTION] == 0xFD) and (packet[i + PKT_INSTRUCTION + 1] == 0xFD) and (packet[i + PKT_INSTRUCTION - 1] == 0xFF) and (packet[i + PKT_INSTRUCTION - 2] == 0xFF):
+            if (packet[i + PKT_INSTRUCTION] == 0xFD) and (packet[i + PKT_INSTRUCTION + 1] == 0xFD) and (
+                    packet[i + PKT_INSTRUCTION - 1] == 0xFF) and (packet[i + PKT_INSTRUCTION - 2] == 0xFF):
                 # FF FF FD FD
                 packet_length_out = packet_length_out - 1
             else:
@@ -312,70 +313,7 @@ class Protocol2PacketHandler(object):
             rxpacket = self.removeStuffing(rxpacket)
 
         return rxpacket, result
-    
-    def rxFastPacket(self, port):
-        rxpacket = []
 
-        result = COMM_TX_FAIL
-        rx_length = 0
-        wait_length = 11  # minimum length (HEADER0 HEADER1 HEADER2 RESERVED PACKET_ID LENGTH_L LENGTH_H INST ERR1 ID1 CRC16_L CRC16_H ERR2 ID2 CRC16_L CRC16_H)
-
-        while True:
-            rxpacket.extend(port.readPort(wait_length - rx_length))
-            rx_length = len(rxpacket)
-            if rx_length >= wait_length:
-                # find packet header
-                for idx in range(0, (rx_length - 3)):
-                    if (rxpacket[idx] == 0xFF) and (rxpacket[idx + 1] == 0xFF) and (rxpacket[idx + 2] == 0xFD) and (
-                            rxpacket[idx + 3] != 0xFD):
-                        break
-
-                if idx == 0:
-                    if (rxpacket[PKT_RESERVED] != 0x00) or (rxpacket[PKT_ID] != 0xFE) or (
-                            DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) > RXPACKET_MAX_LEN) or (rxpacket[PKT_INSTRUCTION] != 0x55):
-                        # remove the first byte in the packet
-                        del rxpacket[0]
-                        rx_length -= 1
-                        continue
-
-                    if wait_length != (DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) + PKT_LENGTH_H + 1):
-                        wait_length = DXL_MAKEWORD(rxpacket[PKT_LENGTH_L], rxpacket[PKT_LENGTH_H]) + PKT_LENGTH_H + 1
-                        continue
-
-                    if rx_length < wait_length:
-                        if port.isPacketTimeout():
-                            if rx_length == 0:
-                                result = COMM_RX_TIMEOUT
-                            else:
-                                result = COMM_RX_CORRUPT
-                            break
-                        else:
-                            continue
-
-                    crc = DXL_MAKEWORD(rxpacket[wait_length- 2], rxpacket[wait_length - 1])
-                    if self.updateCRC(0, rxpacket[:wait_length - 2], wait_length - 2) == crc:
-                        result = COMM_SUCCESS
-                    else:
-                        result = COMM_RX_CORRUPT
-                    break
-
-                else:
-                    # remove unnecessary packets
-                    del rxpacket[0: idx]
-                    rx_length -= idx
-
-            else:
-                if port.isPacketTimeout():
-                    if rx_length == 0:
-                        result = COMM_RX_TIMEOUT
-                    else:
-                        result = COMM_RX_CORRUPT
-                    break
-
-        port.is_using = False
-        #print(rxpacket)
-        return rxpacket, result
-	
     # NOT for BulkRead / SyncRead instruction
     def txRxPacket(self, port, txpacket):
         rxpacket = None
@@ -607,30 +545,6 @@ class Protocol2PacketHandler(object):
 
         return data, result, error
 
-    def fastReadRx(self, port, dxl_ids, length):
-        result = COMM_TX_FAIL
-        error = 0
-
-        rxpacket = None
-        data = []
-
-        #while True:
-        rxpacket, result = self.rxFastPacket(port)
-            
-        if result == COMM_SUCCESS: 
-            rxpacket = np.array(rxpacket[8:]).reshape(-1,length+4)
-
-        #print(result == COMM_SUCCESS)
-        #print(rxpacket)
-        #print(rxpacket[:,1])
-        #print(dxl_ids)
-        if result == COMM_SUCCESS and all(rxpacket[:,1] == dxl_ids):
-            error = rxpacket[:,0]
-            data.extend(rxpacket[:,2:length+2].tolist())
-
-        #print(data)
-        return data, result, error
-
     def readTxRx(self, port, dxl_id, address, length):
         error = 0
 
@@ -793,7 +707,7 @@ class Protocol2PacketHandler(object):
 
         return result, error
 
-    def syncReadTx(self, port, start_address, data_length, param, param_length, fast=False):
+    def syncReadTx(self, port, start_address, data_length, param, param_length):
         txpacket = [0] * (param_length + 14)
         # 14: HEADER0 HEADER1 HEADER2 RESERVED ID LEN_L LEN_H INST START_ADDR_L START_ADDR_H DATA_LEN_L DATA_LEN_H CRC16_L CRC16_H
 
@@ -802,7 +716,7 @@ class Protocol2PacketHandler(object):
             param_length + 7)  # 7: INST START_ADDR_L START_ADDR_H DATA_LEN_L DATA_LEN_H CRC16_L CRC16_H
         txpacket[PKT_LENGTH_H] = DXL_HIBYTE(
             param_length + 7)  # 7: INST START_ADDR_L START_ADDR_H DATA_LEN_L DATA_LEN_H CRC16_L CRC16_H
-        txpacket[PKT_INSTRUCTION] = INST_FAST_SYNC_READ if fast else INST_SYNC_READ
+        txpacket[PKT_INSTRUCTION] = INST_SYNC_READ
         txpacket[PKT_PARAMETER0 + 0] = DXL_LOBYTE(start_address)
         txpacket[PKT_PARAMETER0 + 1] = DXL_HIBYTE(start_address)
         txpacket[PKT_PARAMETER0 + 2] = DXL_LOBYTE(data_length)
@@ -815,7 +729,7 @@ class Protocol2PacketHandler(object):
             port.setPacketTimeout((11 + data_length) * param_length)
 
         return result
-	
+
     def syncWriteTxOnly(self, port, start_address, data_length, param, param_length):
         txpacket = [0] * (param_length + 14)
         # 14: HEADER0 HEADER1 HEADER2 RESERVED ID LEN_L LEN_H INST START_ADDR_L START_ADDR_H DATA_LEN_L DATA_LEN_H CRC16_L CRC16_H

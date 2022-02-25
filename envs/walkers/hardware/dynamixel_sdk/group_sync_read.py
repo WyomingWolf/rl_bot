@@ -23,12 +23,12 @@ from .robotis_def import *
 
 
 class GroupSyncRead:
-    def __init__(self, port, ph, start_address, data_length, fast=False):
+    def __init__(self, port, ph, start_address, data_length):
         self.port = port
         self.ph = ph
         self.start_address = start_address
         self.data_length = data_length
-        self.fast = fast
+
         self.last_result = False
         self.is_param_changed = False
         self.param = []
@@ -85,7 +85,7 @@ class GroupSyncRead:
             self.makeParam()
 
         return self.ph.syncReadTx(self.port, self.start_address, self.data_length, self.param,
-                                  len(self.data_dict.keys()) * 1, self.fast)
+                                  len(self.data_dict.keys()) * 1)
 
     def rxPacket(self):
         self.last_result = False
@@ -98,16 +98,10 @@ class GroupSyncRead:
         if len(self.data_dict.keys()) == 0:
             return COMM_NOT_AVAILABLE
 
-        if self.fast:
-            data, result, _ = self.ph.fastReadRx(self.port, list(self.data_dict.keys()), self.data_length)
-            for dxl_id in self.data_dict:
-                self.data_dict[dxl_id] = data[dxl_id][:]
-        else:
-            for dxl_id in self.data_dict:
-                self.data_dict[dxl_id], result, _ = self.ph.readRx(self.port, dxl_id, self.data_length)
-		
-        if result != COMM_SUCCESS:
-            return result
+        for dxl_id in self.data_dict:
+            self.data_dict[dxl_id], result, _ = self.ph.readRx(self.port, dxl_id, self.data_length)
+            if result != COMM_SUCCESS:
+                return result
 
         if result == COMM_SUCCESS:
             self.last_result = True
@@ -120,8 +114,8 @@ class GroupSyncRead:
 
         result = self.txPacket()
         if result != COMM_SUCCESS:
-            return result  
-         
+            return result
+
         return self.rxPacket()
 
     def isAvailable(self, dxl_id, address, data_length):

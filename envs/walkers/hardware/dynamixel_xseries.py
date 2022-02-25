@@ -53,10 +53,10 @@ ADDR_HARDWARE_ERROR             = 70
 LEN_HARDWARE_ERROR              = 1         # Data Byte Length
 ADDR_GOAL_POSITION              = 116
 LEN_GOAL_POSITION               = 4         # Data Byte Length
-ADDR_PRESENT_LOAD		= 126
-LEN_PRESENT_LOAD		= 2	    # Data Byte Length
-ADDR_PRESENT_VELOCITY		= 128
-LEN_PRESENT_VELOCITY		= 4	    # Data Byte Length         
+ADDR_PRESENT_LOAD		        = 126
+LEN_PRESENT_LOAD		        = 2	    # Data Byte Length
+ADDR_PRESENT_VELOCITY		    = 128
+LEN_PRESENT_VELOCITY		    = 4	    # Data Byte Length         
 ADDR_PRESENT_POSITION           = 132
 LEN_PRESENT_POSITION            = 4         # Data Byte Length
 ADDR_PRESENT_TEMP               = 146
@@ -72,14 +72,17 @@ LED_ON                          = 1         # and this value
 
 LOAD_PRECISION                  = 1000
 VEL_PRECISION                   = 1023
-POS_PRECISION                   = 4095
+POS_PRECISION                   = 4095/2
 
 
-
-class ServoController:
+class XSeries:
     def __init__(self, servos):
-        self.servos = servos
-        self.num_servos = np.shape(self.servos)[0]
+        #self.servos = servos
+        self.num_servos = np.shape(servos)[0]
+        self.ids = servos[:,0]
+        self.limits = servos[:,1:3]
+        self.reset_steps = servos[:,3:]
+        self.num_reset_steps = np.shape(self.reset_steps)[1]
 
         # Initialize PortHandler instance
         # Set the port path
@@ -95,7 +98,7 @@ class ServoController:
         self.groupSyncWrite = GroupSyncWrite(self.portHandler, self.packetHandler, ADDR_GOAL_POSITION, LEN_GOAL_POSITION)
 
         # Initialize GroupSyncRead instace for Present Position
-        self.groupSyncRead = GroupSyncRead(self.portHandler, self.packetHandler, ADDR_INDIRECTDATA_FOR_READ, LEN_INDIRECTDATA_FOR_READ, fast=False)
+        self.groupSyncRead = GroupSyncRead(self.portHandler, self.packetHandler, ADDR_INDIRECTDATA_FOR_READ, LEN_INDIRECTDATA_FOR_READ)
 
         # Open port
         if self.portHandler.openPort():
@@ -113,10 +116,12 @@ class ServoController:
         
         # reboot all servos
         for i in range(self.num_servos):
-            DXL_ID = self.servos[i,0]
+            DXL_ID = self.ids[i]
             result =  self.reboot(DXL_ID) 
-            while result != 0:
-                result =  self.reboot(DXL_ID)
+            attemps = 0
+            while result!=0 and attemps<5:
+                attemps += 1
+                result = self.reboot(DXL_ID)
        
 
     def setTorque(self, DXL_ID, status):
@@ -124,23 +129,18 @@ class ServoController:
         dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_TORQUE_ENABLE, status)
         if dxl_comm_result != COMM_SUCCESS:
             print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-        elif dxl_error != 0:
-            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        #elif dxl_error != 0:
+            #print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
     def setLED(self, DXL_ID, status):
         # Turn off LED
         dxl_comm_result, dxl_error = self.packetHandler.write1ByteTxRx(self.portHandler, DXL_ID, ADDR_LED_RED, status)
         if dxl_comm_result != COMM_SUCCESS:
             print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-        elif dxl_error != 0:
-            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
+        #elif dxl_error != 0:
+            #print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
-    def setupServo(self, DXL_ID):
-        self.setLED(DXL_ID, LED_OFF)
-        self.setTorque(DXL_ID, TORQUE_DISABLE)  
-        time.sleep(0.1)
-        
-    
+    def setupServo(self, DXL_ID):         
         # INDIRECTDATA parameter storages replace hardware error status, present load, present velocity, present position and present temperature
         dxl_comm_result, dxl_error = self.packetHandler.write2ByteTxRx(self.portHandler, DXL_ID, ADDR_INDIRECTADDRESS_FOR_READ, ADDR_HARDWARE_ERROR)
         if dxl_comm_result != COMM_SUCCESS:
@@ -203,12 +203,6 @@ class ServoController:
         elif dxl_error != 0:
             print("%s" % self.packetHandler.getRxPacketError(dxl_error))
 
-        time.sleep(0.1)
-
-        self.setLED(DXL_ID, LED_ON)
-        self.setTorque(DXL_ID, TORQUE_ENABLE)     
-        time.sleep(0.1)
-
         # Add parameter storage for multiple values
         dxl_addparam_result = self.groupSyncRead.addParam(DXL_ID)
         if dxl_addparam_result == True:   
@@ -216,7 +210,7 @@ class ServoController:
 
 
     def readState(self):
-        #print("Read")
+        fail = False
         dxl_error = np.zeros((self.num_servos,1), dtype=np.int8)
         dxl_load = np.zeros((self.num_servos,1), dtype=np.int16)	
         dxl_state = np.zeros((self.num_servos,2), dtype=np.int32)
@@ -224,104 +218,104 @@ class ServoController:
         # Syncread present position from indirectdata
         dxl_comm_result = self.groupSyncRead.txRxPacket()
         if dxl_comm_result != COMM_SUCCESS:
-            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+            #print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
+            print("Group sync read failed")
+            fail = True
+        else:
+            for i in range(self.num_servos):
+                DXL_ID = self.ids[i]
+                
+                '''           
+                # Check if groupsyncread data of Dynamixel error status is available
+                dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
+                if dxl_getdata_result != True:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    quit()
 
-        for i in range(self.num_servos):
-            DXL_ID = self.servos[i,0]
-            
-            '''           
-            # Check if groupsyncread data of Dynamixel error status is available
-            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
-            if dxl_getdata_result != True:
-                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
-                quit()
+                # Check if groupsyncread data of Dynamixel present load value is available
+                dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
+                if dxl_getdata_result != True:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    quit()
 
-            # Check if groupsyncread data of Dynamixel present load value is available
-            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
-            if dxl_getdata_result != True:
-                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
-                quit()
+                # Check if groupsyncread data of Dynamixel present velocity value is available
+                dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
+                if dxl_getdata_result != True:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    quit()
 
-            # Check if groupsyncread data of Dynamixel present velocity value is available
-            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
-            if dxl_getdata_result != True:
-                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
-                quit()
+                # Check if groupsyncread data of Dynamixel present Position value is available
+                dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
+                if dxl_getdata_result != True:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    quit()
 
-            # Check if groupsyncread data of Dynamixel present Position value is available
-            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
-            if dxl_getdata_result != True:
-                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
-                quit()
+                # Check if groupsyncread data of Dynamixel present temperature is available
+                dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
+                if dxl_getdata_result != True:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    quit()
+                '''
 
-            # Check if groupsyncread data of Dynamixel present temperature is available
-            dxl_getdata_result = self.groupSyncRead.isAvailable(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
-            if dxl_getdata_result != True:
-                print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
-                quit()
-            '''
+                try:
+                    # Get Dynamixel present error status
+                    dxl_error[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
 
-            try:
-                # Get Dynamixel present error status
-                dxl_error[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ, LEN_HARDWARE_ERROR)
+                    # Get Dynamixel present load value
+                    dxl_load[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
 
-                # Get Dynamixel present load value
-                dxl_load[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR, LEN_PRESENT_LOAD)
+                    # Get Dynamixel present position value
+                    dxl_state[i,0] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
 
-                # Get Dynamixel present position value
-                dxl_state[i,0] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD, LEN_PRESENT_VELOCITY)
+                    # Get Dynamixel present position value
+                    dxl_state[i,1] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
 
-                # Get Dynamixel present position value
-                dxl_state[i,1] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY, LEN_PRESENT_POSITION)
-
-                # Get Dynamixel present error status
-                dxl_temp[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
-            except Exception as e:
-                print(e)
-                print(DXL_ID)
-
-        return np.concatenate((dxl_load, dxl_state), axis=1)/[LOAD_PRECISION, VEL_PRECISION, POS_PRECISION], dxl_error, dxl_temp
+                    # Get Dynamixel present error status
+                    dxl_temp[i] = self.groupSyncRead.getData(DXL_ID, ADDR_INDIRECTDATA_FOR_READ + LEN_HARDWARE_ERROR + LEN_PRESENT_LOAD + LEN_PRESENT_VELOCITY + LEN_PRESENT_POSITION, LEN_PRESENT_TEMP)
+                except Exception as e:
+                    print("[ID:%03d] groupSyncRead getdata failed" % DXL_ID)
+                    fail = True
+            dxl_load = dxl_load/LOAD_PRECISION
+            dxl_state = dxl_state/[VEL_PRECISION, POS_PRECISION] - [0, 1]   
+        return np.concatenate((dxl_load, dxl_state), axis=1), dxl_error, dxl_temp, fail
 
 
     def moveToStart(self):
-        goal_position = self.servos[:,1]
-             
-        for i in range(self.num_servos):
-            DXL_ID = self.servos[i,0]
-            # Allocate goal position value into byte array
-            param_goal_position = [DXL_LOBYTE(DXL_LOWORD(goal_position[i])), DXL_HIBYTE(DXL_LOWORD(goal_position[i])), DXL_LOBYTE(DXL_HIWORD(goal_position[i])), DXL_HIBYTE(DXL_HIWORD(goal_position[i]))] 
-            # Add values to the Syncwrite parameter storage
-            dxl_addparam_result = self.groupSyncWrite.addParam(DXL_ID, param_goal_position)
-            if dxl_addparam_result != True:
-                print("[ID:%03d]groupSyncWrite addparam failed" % DXL_ID)
+        for j in range(self.num_reset_steps):
+            goal_position = self.reset_steps[:,j]
+                
+            for i in range(self.num_servos):
+                DXL_ID = self.ids[i]
+                # Allocate goal position value into byte array
+                param_goal_position = [DXL_LOBYTE(DXL_LOWORD(goal_position[i])), DXL_HIBYTE(DXL_LOWORD(goal_position[i])), DXL_LOBYTE(DXL_HIWORD(goal_position[i])), DXL_HIBYTE(DXL_HIWORD(goal_position[i]))] 
+                # Add values to the Syncwrite parameter storage
+                dxl_addparam_result = self.groupSyncWrite.addParam(DXL_ID, param_goal_position)
+                if dxl_addparam_result != True:
+                    print("[ID:%03d]groupSyncWrite addparam failed" % DXL_ID)
+                    quit()
+
+            # Syncwrite goal position
+            dxl_comm_result = self.groupSyncWrite.txPacket()
+            if dxl_comm_result != COMM_SUCCESS:
+                print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
                 quit()
-
-        # Syncwrite goal position
-        dxl_comm_result = self.groupSyncWrite.txPacket()
-        if dxl_comm_result != COMM_SUCCESS:
-            print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
-            quit()
-
-        # Clear syncwrite parameter storage
-        self.groupSyncWrite.clearParam()
+            # Clear syncwrite parameter storage
+            self.groupSyncWrite.clearParam()
+            time.sleep(0.5)
        
     def writeAction(self, action):
-        #print(len(action))
-        #print(action)
+
         if len(action) != self.num_servos:
             print("Mismatched action size")
             quit()
         else:
-            action[action > 1] = 1
-            action[action < -1] = -1
-            action = (action + 1) / 2
+            target = (np.array(action) + 1) / 2
      
             # convert actions to encoder positions
-            goal_position = (action*(self.servos[:,3] - self.servos[:,2]) + self.servos[:,2]).astype(int)
-            #print(goal_position)
+            goal_position = (target*(self.limits[:,1] - self.limits[:,0]) + self.limits[:,0]).astype(int)
           
         for i in range(self.num_servos):
-            DXL_ID = self.servos[i,0]
+            DXL_ID = self.ids[i]
             # Allocate goal position value into byte array
             param_goal_position = [DXL_LOBYTE(DXL_LOWORD(goal_position[i])), DXL_HIBYTE(DXL_LOWORD(goal_position[i])), DXL_LOBYTE(DXL_HIWORD(goal_position[i])), DXL_HIBYTE(DXL_HIWORD(goal_position[i]))]
 
@@ -341,19 +335,23 @@ class ServoController:
 
 
     def reboot(self, DXL_ID):
+        self.setLED(DXL_ID, LED_OFF)
+        self.setTorque(DXL_ID, TORQUE_DISABLE)  
+        time.sleep(0.1)
+    
         status = 0
-        dxl_comm_result, dxl_error = self.packetHandler.reboot(self.portHandler, DXL_ID)
+        dxl_comm_result, _ = self.packetHandler.reboot(self.portHandler, DXL_ID)
+        time.sleep(0.5)
         if dxl_comm_result != COMM_SUCCESS:
             print("%s" % self.packetHandler.getTxRxResult(dxl_comm_result))
             status = 1
-        elif dxl_error != 0:
-            print("%s" % self.packetHandler.getRxPacketError(dxl_error))
-            status = 1
         else:
-            time.sleep(0.25)
             self.setupServo(DXL_ID)
-            #time.sleep(0.25)
+            time.sleep(0.1)
 
+        self.setLED(DXL_ID, LED_ON)
+        self.setTorque(DXL_ID, TORQUE_ENABLE) 
+        time.sleep(0.1)
         return status
         
 
@@ -362,7 +360,7 @@ class ServoController:
         self.groupSyncRead.clearParam()
 
         for i in range(self.num_servos):
-            DXL_ID = self.servos[i,0]
+            DXL_ID = self.ids[i]
             self.setTorque(DXL_ID, TORQUE_DISABLE)  
             self.setLED(DXL_ID, LED_OFF)
 
